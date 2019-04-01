@@ -1,0 +1,335 @@
+---
+title: "02_10_R_PCA_pulsar_dataset"
+author: "olga"
+date: "March 25, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#PCA on PULSAR Data, same as Python file:
+https://github.com/olgabradford/machine_learning_python/blob/master/01_10_Principal_Component_Analysis_PCA_classification_Pulsar.ipynb
+
+
+In RPubs see as it was run:
+rpubs.com/olga_bradford/482051
+
+
+
+
+PCA in R
+In R, there are several functions from different packages that allow us to perform PCA. 5 different ways to do a PCA using the following functions (with their corresponding packages in parentheses):
+
+prcomp() (stats)
+princomp() (stats)
+PCA() (FactoMineR)
+dudi.pca() (ade4)
+acp() (amap)
+
+Brief note: It is no coincidence that the three external packages ("FactoMineR", "ade4", and "amap") have been developed by French data analysts, which have a long tradition and preference for PCA and other related exploratory technique
+
+the typical PCA results should consist of a set of eigenvalues, a table with the scores or Principal Components (PCs), and a table of loadings (or correlations between variables and PCs). The eigenvalues provide information of the variability in the data. The scores provide information about the structure of the observations. The loadings (or correlations) allow you to get a sense of the relationships between variables, as well as their associations with the extracted PCs.
+
+```{r}
+pulsar <- read.csv("pulsar_stars.csv", header=TRUE)
+head(pulsar)
+
+```
+
+```{r}
+names(pulsar)
+```
+
+##Rename columns
+Same as in Python workflow, rename original column names to the above:
+
+data2.columns=['mean_profile', 'std_profile', 'kurtosis_profile', 'skewness_profile',
+           'mean_dmsnr_curve', 'std_dmsnr_curve', 'kurtosis_dmsnr_curve',
+           'skewness_dmsnr_curve', 'target_class']
+           
+         
+         
+```{r}
+names(pulsar) <- c("mean_profile", "std_profile", "kurtosis_profile","skewness_profile","mean_dmsnr_curve","std_dmsnr_curve","kurtosis_dmsnr_curve","skewness_dmsnr_curve", "target_class")
+```
+
+```{r}
+names(pulsar)
+```
+
+
+
+```{r}
+str(pulsar)
+```
+
+
+
+
+##Scale pulsAR
+Scale only columns 1-8, and keep target_class unchanged
+
+
+
+```{r}
+#cbind() - combine vectors by row/column 
+pulsar.z = as.data.frame(cbind(pulsar[,9,drop=F], scale(pulsar[ ,1:8])))
+```
+
+
+
+#Train Test split
+```{r}
+nrow(pulsar.z)
+
+```
+
+
+```{r}
+# Divide data in 80:20 ratio - training:test
+samp_size <- floor(0.80* nrow(pulsar.z))
+train_ind <- sample(seq_len(nrow(pulsar.z)), size = samp_size)
+
+# Training data
+pca.train <- as.data.frame(pulsar.z[train_ind,])
+
+# Test Data
+pca.test <-  as.data.frame(pulsar.z[-train_ind,])
+```
+
+
+#PCA on scaled data only on train dataset
+```{r}
+#With parameter scale. = T, we normalize the variables to have standard deviation equals to 1
+prin_comp <- prcomp(pca.train, scale=TRUE)
+
+```
+
+We will use prcomp function for PCA. The prcomp provides four output as dumped below.
+
+Sdev - This defines the standard deviation of projected points on PC1, PC2, PC3 and PC3. As expected, the standard deviation of projected point is in decreasing order from PC1 to PC4.
+Rotation - This defines the principal components axis. Here there are four principal components as there are four input features.
+Center/Scale - These are mean and standard deviation of input features in original feature space (without any transformation).
+
+```{r}
+#The prcomp() function results in 5 useful measures:
+names(prin_comp)
+```
+
+
+
+
+```{r}
+#Sdev - This defines the standard deviation of projected points on PC1, PC2, PC3 and PC3. As expected, the standard deviation of projected point is in decreasing order from PC1 to PC4.
+#sqrt of eigenvalues
+prin_comp$sdev
+```
+
+
+```{r}
+#compute standard deviation
+std_dev <- prin_comp$sdev
+
+#compute variance
+pr_var <- std_dev^2
+#check variance of first 4 components
+
+pr_var[1:10]
+```
+We aim to find the components which explain the maximum variance. This is because, we want to retain as much information as possible using these components. So, higher is the explained variance, higher will be the information contained in those components.
+
+To compute the proportion of variance explained by each component, we simply divide the variance by sum of total variance. This results in:
+
+
+```{r}
+#proportion of variance explained
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:10]
+```
+
+This shows that first principal component explains 52% variance, second 24% variance, third 9%, forth 5%....
+
+
+
+#scree plot
+```{r}
+ plot(prop_varex, xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b")
+```
+
+6 components explain 98% of variance
+
+
+
+```{r}
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+```
+
+https://www.analyticsvidhya.com/blog/2016/03/practical-guide-principal-component-analysis-python/
+
+
+```{r}
+#Rotation - This defines the principal components axis. Here there are four principal components as there are four input features.
+#loadings
+prin_comp$rotation
+```
+
+
+```{r}
+# PCs (aka scores)
+head(prin_comp$x)
+```
+
+
+
+```{r}
+#Center/Scale - These are mean and standard deviation of input features in original feature space (without any transformation).
+prin_comp$center
+```
+```{r}
+prin_comp$scale
+```
+
+
+
+##Predictive Modeling with PCA components
+
+# Train / Test Split
+
+
+After we've calculated the principal components on training set, let's now understand the process of predicting on test data using these components. The process is simple. Just like we've obtained PCA components on training set, we'll get another bunch of components on testing set. Finally, we train the model.
+
+But, few important points to understand:
+
+We should not combine the train and test set to obtain PCA components of whole data at once. Because, this would violate the entire assumption of generalization since test data would get 'leaked' into the training set. In other words, the test data set would no longer remain 'unseen'. Eventually, this will hammer down the generalization capability of the model.
+We should not perform PCA on test and train data sets separately. Because, the resultant vectors from train and test PCAs will have different directions ( due to unequal variance). Due to this, we'll end up comparing data registered on different axes. Therefore, the resulting vectors from train and test data should have same axes.
+
+
+We should do exactly the same transformation to the test set as we did to training set, including the center and scaling feature. Let's do it in R:
+
+```{r}
+# put classifier back to train set
+train_data <- data.frame(target_class=pca.train$target_class,prin_comp$x)
+```
+
+
+```{r}
+#we are interested in first 6 PCAs
+train_data <- train_data[,1:7]
+```
+
+
+
+```{r}
+#run a decision tree
+#install.packages("rpart")
+library(rpart)
+rpart.model <- rpart(target_class~ .,data = train_data, method = "anova")
+rpart.model
+```
+
+
+
+
+```{r}
+#transform test into PCA
+test.data <- predict(prin_comp, newdata = pca.test)
+test.data <- as.data.frame(test.data)
+```
+
+
+```{r}
+#select the first 6 components
+test.data <- test.data[,1:6]
+```
+
+
+```{r}
+#make prediction on test data
+rpart.prediction <- predict(rpart.model, test.data)
+```
+
+
+
+
+```{r}
+#For fun, finally check your score of leaderboard
+#sample <- read.csv("pulsar_stars.csv")
+
+final.sub <- data.frame(Item_Identifier = pca.test$target_class, target_class = pca.test$target_class, predicted_class = rpart.prediction)
+write.csv(final.sub, "pca2.csv",row.names = F)
+```
+
+
+
+#check what went in a file:
+```{r}
+head(final.sub, 45)
+```
+
+
+```{r}
+
+#rounded error
+round(mean((rpart.prediction - pca.test$target_class)^2),5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Plots of observations
+```{r}
+
+# PCA with function prcomp
+#With parameter scale. = T, we normalize the variables to have standard deviation equals to 1
+pca1 = prcomp(USArrests, scale. = TRUE)
+
+# load ggplot2
+library(ggplot2)
+
+# create data frame with scores
+scores = as.data.frame(pca1$x)
+
+# plot of observations
+ggplot(data = scores, aes(x = PC1, y = PC2, label = rownames(scores))) +
+  geom_hline(yintercept = 0, colour = "gray65") +
+  geom_vline(xintercept = 0, colour = "gray65") +
+  geom_text(colour = "tomato", alpha = 0.8, size = 4) +
+  ggtitle("PCA plot of USA States - Crime Rates")
+```
+
+```{r}
+head(USArrests)
+```
+```{r}
+head(pca1)
+```
+
